@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wildlife Conservation Intelligence</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<header class="top">
+  <h1>Wildlife Conservation Intelligence</h1>
+  <span class="sub">An invented reserve, 60 camera traps, 16 microphones, one month. Where are the animals, and what is happening at night?</span>
+  <span class="mode">…</span>
+  <button class="primary" id="runall">Run all steps</button>
+</header>
+<main>
+  <nav class="steps"></nav>
+  <div><div id="steps"></div></div>
+</main>
+<footer>The reserve and everything in it are simulated. There are no photographs or recordings: a camera detection is a label with a confidence, a sound is five summary numbers. Alerts and patrol plans are proposals for people to judge.</footer>
+<script src="kit.js"></script>
+<script>
+const S = 24, PX = 20, pad = 8, X = x => pad + x * PX, Y = y => pad + (S - y) * PX;
+const frame = (inner, legend = []) => `<svg viewBox="0 0 ${S * PX + 2 * pad} ${S * PX + 2 * pad}" width="100%" style="max-width:520px" role="img" aria-label="Map of the reserve"><rect x="${pad}" y="${pad}" width="${S * PX}" height="${S * PX}" fill="#101014" stroke="#2a2a30"/>${inner}
+  <circle cx="${X(12)}" cy="${Y(12)}" r="4" fill="#ececf1"/><text x="${X(12) + 7}" y="${Y(12) + 4}">HQ</text></svg><div class="legend">${legend.map(([c, t]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>`;
+const dots = (pts, color, r = 3.2, op = 0.75) => pts.map(([x, y]) => `<circle cx="${X(x)}" cy="${Y(y)}" r="${r}" fill="${color}" opacity="${op}"/>`).join('');
+const heat = risk => risk.map((row, iy) => row.map((v, ix) => v > 0.03 ? `<rect x="${X(ix)}" y="${Y(iy + 1)}" width="${PX}" height="${PX}" fill="rgba(239,106,106,${(0.85 * v).toFixed(2)})"/>` : '').join('')).join('');
+const path = (p, color, dash) => `<polyline points="${p.map(([x, y]) => X(x) + ',' + Y(y)).join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5 4"' : ''} opacity=".9"/>`;
+const R = {
+  load: j => { const s = j.result; return kpis([{ label: 'Batches received', value: fmt.n(s.batches_received), sub: 'from ' + s.cameras + ' cameras and ' + s.microphones + ' microphones' }, { label: 'Sent twice, stored once', value: s.duplicates_ignored },
+      { label: 'Arrived out of order', value: s.arrived_out_of_order }, { label: 'Observations', value: fmt.n(s.observations), sub: fmt.n(s.by_kind.animal) + ' animal, ' + fmt.n(s.by_kind.sound) + ' sound, ' + s.by_kind.vehicle + ' vehicle' },
+      { label: 'Sensors with a gap left', value: s.sensors_with_missing_batches }, { label: 'Longest silence', value: s.longest_offline.days + ' days', sub: s.longest_offline.sensor + ', delivered on day ' + s.longest_offline.delivered_on_day }]); },
+  leopard: (l, all) => { const P = l.periods, row = (k, f) => ({ k, b: f(P.before), a: f(P.after) });
+    return `<div class="grid2">${card('Share of camera sites used by leopards', table([{ k: 'k', label: 'Way of counting' }, { k: 'b', label: 'Days 0 to 14', num: 1, f: v => v }, { k: 'a', label: 'Days 15 to 29', num: 1, f: v => v }], [
+        row('Any leopard label, any confidence', p => fmt.pct(p.share_with_any_label_at_any_confidence)), row(`Labels at confidence ${l.site_confidence} or more`, p => fmt.pct(p.naive) + ` (${p.sites_with_detections} sites)`),
+        row('Occupancy model on those', p => `${fmt.pct(p.psi)} <span class="mute">(${fmt.pct(p.low)} to ${fmt.pct(p.high)})</span>`), row('Chance of catching one per day, where present', p => fmt.pct(p.p, 1))])
+      + '<div class="small mute" style="margin-top:8px">The first row is what trusting every label gives. The model row estimates how many sites a leopard used without ever being caught; its range is wide because leopards are caught on about one day in twenty-five.</div>')}
+      ${card('Confident leopard detections, both periods', frame(dots(P.before.sites.map(s => [s.x, s.y]), PALETTE[0], 5) + dots(P.after.sites.map(s => [s.x, s.y]), PALETTE[2], 3), [[PALETTE[0], 'days 0 to 14'], [PALETTE[2], 'days 15 to 29']]))}</div>`; },
+  shift: s => { const c = s.from_cameras, b = s.habitat_lost.block_km; return kpis([{ label: 'Crossing point before', value: c.before_km_east + ' km east' }, { label: 'After', value: c.after_km_east + ' km east' }, { label: 'Shift, from cameras', value: fmt.n(c.shift_km, 1) + ' km', sub: c.n_before + ' and ' + c.n_after + ' detections' },
+      { label: 'Could it be chance?', value: 'p = ' + c.p_value, sub: 'permutation test' }, { label: 'Shift, from GPS collars', value: fmt.n(s.from_collars.shift_km, 1) + ' km', sub: s.from_collars.fixes + ' fixes' }])
+    + card('Elephant detections before and after the habitat loss', frame(`<rect x="${X(b.x[0])}" y="${Y(b.y[1])}" width="${(b.x[1] - b.x[0]) * PX}" height="${(b.y[1] - b.y[0]) * PX}" fill="rgba(239,106,106,.14)" stroke="#ef6a6a" stroke-dasharray="4 3"/>`
+        + dots(s.detections.before, PALETTE[0]) + dots(s.detections.after, PALETTE[2]) + [[c.before_km_east, PALETTE[0]], [c.after_km_east, PALETTE[2]]].map(([x, col]) => `<line x1="${X(x)}" x2="${X(x)}" y1="${pad}" y2="${pad + S * PX}" stroke="${col}" stroke-dasharray="2 4"/>`).join(''),
+        [[PALETTE[0], 'before day 15'], [PALETTE[2], 'after'], ['#ef6a6a', 'cleared block']])); },
+  sus: s => { const f = s.false_positive_controls; return kpis([{ label: 'Night "vehicle" labels', value: f.night_vehicle_detections, sub: 'at ' + f.cameras_with_any + ' cameras' }, { label: 'Confident ones', value: f.confident, sub: 'confidence ' + f.min_confidence + ' or more' },
+      { label: 'Cameras flagged', value: f.cameras_flagged, sub: 'repeated, far beyond chance' }, { label: 'Clusters raised', value: s.clusters.length }, { label: 'Gunshot alerts', value: s.gunshot_alerts.length, sub: 'threshold ' + s.gunshot_threshold }])
+    + s.clusters.map(c => card(`Cluster near ${c.centre[0]}, ${c.centre[1]} km · confidence ${c.confidence}`, `<p style="margin:0 0 8px">${c.detections} confident night-time vehicles at ${esc(c.camera_names.join(', '))} on nights ${c.nights.join(', ')}. Chance of this at the background rate: ${c.chance_p_value.toExponential(1)}.</p>
+        ${table([{ k: 'night', label: 'Night' }, { k: 'sound', label: 'Heard within 4 km', f: v => badge(v, v === 'gunshot' ? 'bad' : 'warn') }], c.corroborating_sounds)}`)).join('')
+    + `<div class="small mute" style="margin:-4px 0 12px">${esc(f.rule[0].toUpperCase() + f.rule.slice(1))}.</div>`; },
+  tiles: () => '',
+  patrol: (p, all) => kpis([{ label: 'Risk covered by the plan', value: fmt.pct(p.risk_covered) }, { label: 'Boundary patrol covers', value: fmt.pct(p.baseline.risk_covered) }, { label: 'Teams', value: p.routes.length, sub: 'eight hours each' }])
+    + `<div class="grid2">${card('Risk map with the proposed routes', frame(heat(all.tiles.risk) + p.baseline.routes.map(r => path(r.path, '#6b6b78', 1)).join('') + p.routes.map((r, i) => path(r.path, PALETTE[[0, 1, 4][i % 3]])).join(''),
+        [['#ef6a6a', 'risk'], [PALETTE[0], 'team 1'], [PALETTE[1], 'team 2'], [PALETTE[4], 'team 3'], ['#6b6b78', 'boundary patrol (dashed)']]))}
+       ${card('Routes', table([{ k: 'team', label: 'Team' }, { k: 'waypoints', label: 'Stops', num: 1 }, { k: 'km', label: 'km', num: 1 }, { k: 'hours', label: 'Hours', num: 1 }], p.routes)
+        + `<div class="small mute" style="margin-top:8px">${esc(p.status[0].toUpperCase() + p.status.slice(1))}. Assumes ${p.assumptions.speed_kmh} km/h, a 20-minute stop at each waypoint, and that a patrol covers ${p.assumptions.a_patrol_covers_km} km either side. Risk weights are a judgement: ${Object.entries(all.tiles.weights).map(([k, v]) => k.replace(/_/g, ' ') + ' ' + v).join(', ')}.</div>`)}</div>`,
+  sensors: s => `<div class="card" style="border-color:var(--good)">${badge(s.status, 'good')} <b>${esc(s.sensor)}</b> resent batch ${s.seq}. Stored again: <b>${s.stored}</b> observations.</div>`,
+  infer: i => card('A loud, short crack', `<div class="grid2"><div>${barChart(Object.entries(i.probabilities).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v, color: k === 'gunshot' ? PALETTE[3] : PALETTE[0] })), { max: 1, fmt: v => fmt.pct(v, 1) })}</div>
+    <div><p style="margin:0 0 8px">${badge(i.raises_alert ? 'alert' : 'no alert', i.raises_alert ? 'bad' : 'good')} Gunshot probability ${fmt.pct(i.gunshot_probability, 1)}; an alert needs ${fmt.pct(i.alert_threshold, 1)}.</p><p class="small mute" style="margin:0">${esc(i.why_so_strict)}</p></div></div>`),
+  truth: (t, all) => { const c = all.sus.clusters[0] || { nights: [], camera_names: [], centre: ['–', '–'] }, L = all.leopard.periods;
+    return card('What the simulator planted, against what was found', table([{ k: 'k', label: '' }, { k: 'p', label: 'Planted' }, { k: 'f', label: 'Found' }], [
+      { k: 'Night vehicles', p: `${t.night_vehicles.cameras.join(', ')} on nights ${t.night_vehicles.nights.join(', ')}`, f: `${c.camera_names.join(', ')} on nights ${c.nights.join(', ')}` },
+      { k: 'Gunshots', p: t.gunshots, f: all.sus.gunshot_alerts.length + ' alerts' }, { k: 'Corridor, km east', p: t.corridor_km_east.before + ' then ' + t.corridor_km_east.after, f: all.shift.from_cameras.before_km_east + ' then ' + all.shift.from_cameras.after_km_east },
+      { k: 'Leopard sites, days 0 to 14', p: fmt.pct(t.sites_used.leopard.before), f: `${fmt.pct(L.before.naive)} counted, ${fmt.pct(L.before.psi)} modelled` }, { k: 'Leopard sites, days 15 to 29', p: fmt.pct(t.sites_used.leopard.after), f: `${fmt.pct(L.after.naive)} counted, ${fmt.pct(L.after.psi)} modelled` }])); },
+  audit: a => card(`Audit log · hash chain ${a.chain_valid ? 'verifies' : 'BROKEN'}`, table([{ k: 'at', label: 'When', f: fmt.time }, { k: 'action', label: 'Action', f: v => `<span class="mono">${esc(v)}</span>` },
+    { k: 'detail', label: 'Detail', f: d => `<span class="small">${esc(Object.entries(d).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 130))}</span>` }], a.events.slice().reverse())),
+};
+const demo = new Demo(R); demo.init();
+</script>
+</body>
+</html>

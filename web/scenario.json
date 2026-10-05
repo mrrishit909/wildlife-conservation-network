@@ -1,0 +1,22 @@
+{
+ "service": "wildlife-conservation-network",
+ "run": "demo-1",
+ "tokens": {"warden": "reserve-warden-demo", "ranger": "reserve-ranger-demo", "researcher": "reserve-researcher-demo"},
+ "steps": [
+  {"title": "A month of uploads from the field", "say": "Sixty camera traps and sixteen microphones in an invented reserve. They have no signal most of the time, so they save numbered batches and upload when they can: out of order, some twice, one camera five days late.",
+   "calls": [{"key": "load", "as": "warden", "method": "POST", "path": "/v1/scenarios/month"}]},
+  {"title": "Where does each species live?", "say": "Cameras mislabel, and a shy animal can use a site for two weeks without being caught. Three ways of counting are compared for the leopard: every label, confident labels only, and a model that allows for missed detections.",
+   "calls": [{"key": "species", "as": "researcher", "method": "GET", "path": "/v1/species"}, {"key": "leopard", "as": "researcher", "method": "GET", "path": "/v1/species/{{species.items.3.id}}/distribution"}]},
+  {"title": "The herd changed its route", "say": "On day 15 a block of habitat in the west was cleared. Elephant detections before and after are compared, with a test of whether the move could be chance, and checked against eight GPS collars.",
+   "calls": [{"key": "shift", "as": "researcher", "method": "GET", "path": "/v1/corridor/shift?species=elephant"}]},
+  {"title": "Vehicles at night", "say": "Twenty-three cameras logged something labelled a vehicle after dark at some point. Sending rangers to each would waste the month. Only confident detections repeated across nights, far beyond chance, are raised, and they are checked against what the microphones heard.",
+   "calls": [{"key": "sus", "as": "ranger", "method": "GET", "path": "/v1/alerts/suspicious"}]},
+  {"title": "Where to patrol tomorrow", "say": "The evidence becomes a risk map, and three ranger teams get routes that cover as much of it as eight hours allow. A fixed boundary patrol is shown for comparison. The plan is a proposal for the warden.",
+   "calls": [{"key": "tiles", "as": "ranger", "method": "GET", "path": "/v1/risk/tiles"}, {"key": "patrol", "as": "ranger", "method": "POST", "path": "/v1/patrols/optimize", "body": {"teams": 3, "hours": 8}}]},
+  {"title": "Things that should not raise an alarm", "say": "A microphone resends a batch it already delivered: nothing is counted twice. A loud, short crack that is probably a branch is classified: it does not clear the strict gunshot threshold, and the reply says why the threshold is strict.",
+   "calls": [{"key": "sensors", "as": "ranger", "method": "POST", "path": "/v1/sensors/{{sus.resend_sensor}}/sync", "body": {"seq": 4, "observations": []}},
+             {"key": "infer", "as": "ranger", "method": "POST", "path": "/v1/media/infer", "body": {"kind": "acoustic", "features": [0.16, 0.008, 1300, 3400, 76]}}]},
+  {"title": "Checked against what was planted", "say": "Only a simulation allows this: the planted vehicle pattern, the gunshots and the true site use are compared with what the system found. Then the audit trail.",
+   "calls": [{"key": "truth", "as": "warden", "method": "GET", "path": "/v1/simulation/truth"}, {"key": "audit", "as": "warden", "method": "GET", "path": "/v1/audit?limit=8"}]}
+ ]
+}
